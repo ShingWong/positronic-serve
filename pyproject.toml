@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "positronic-serve"
+version = "0.1.0"
+description = "PEEP network layer — brain-as-a-service + federated polytemporal memory (port 2114, the Andrew port)"
+license = "GPL-3.0-or-later"
+requires-python = ">=3.10"
+dependencies = [
+  "starlette",
+  "uvicorn",
+  "positronic-ai @ git+https://github.com/ShingWong/positronic-agent-interface.git@feat/pai",
+]
+
+[project.scripts]
+positronic-serve = "positronic_serve.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["positronic_serve*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
