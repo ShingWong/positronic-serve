@@ -85,3 +85,35 @@ def test_peers_listing(seeded):
     r = client.get("/v1/federation/peers")
     assert r.status_code == 200
     assert r.json() == {"peers": []}
+
+
+def test_single_key_wrong_token_401(seeded):
+    from positronic_serve.config import load_config
+    from positronic_serve.server import create_app
+    cfg = load_config(seeded)
+    cfg["auth"] = {"manager": "single", "key": "sekret"}
+    client = TestClient(create_app(cfg))
+    r = client.post("/v1/memory/recall", json={"text": "auth token"},
+                    headers={"Authorization": "Bearer wrong"})
+    assert r.status_code == 401
+
+
+def test_single_key_right_token_200(seeded):
+    from positronic_serve.config import load_config
+    from positronic_serve.server import create_app
+    cfg = load_config(seeded)
+    cfg["auth"] = {"manager": "single", "key": "sekret"}
+    client = TestClient(create_app(cfg))
+    r = client.post("/v1/memory/recall", json={"text": "auth token"},
+                    headers={"Authorization": "Bearer sekret"})
+    assert r.status_code == 200
+
+
+def test_single_key_no_token_401(seeded):
+    from positronic_serve.config import load_config
+    from positronic_serve.server import create_app
+    cfg = load_config(seeded)
+    cfg["auth"] = {"manager": "single", "key": "sekret"}
+    client = TestClient(create_app(cfg))
+    r = client.post("/v1/memory/recall", json={"text": "auth token"})
+    assert r.status_code == 401

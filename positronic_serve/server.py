@@ -6,7 +6,6 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from positronic_serve.auth import LocalKeyManager as _Local
 from positronic_serve.auth import build_key_manager
 
 
@@ -21,8 +20,6 @@ def _auth_ok(request: Request, cfg: dict) -> bool:
     mgr = build_key_manager(cfg.get("auth", {}))
     header = request.headers.get("authorization", "")
     token = header[7:] if header.startswith("Bearer ") else None
-    if isinstance(mgr, _Local) or cfg.get("host") == "127.0.0.1":
-        return mgr.validate(token)
     return mgr.validate(token)
 
 
