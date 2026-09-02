@@ -1,5 +1,6 @@
 # tests/test_auth.py
 import pytest
+
 from positronic_serve.auth import LocalKeyManager, SingleKeyManager, build_key_manager
 
 
