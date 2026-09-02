@@ -87,6 +87,22 @@ def test_peers_listing(seeded):
     assert r.json() == {"peers": []}
 
 
+def test_federated_recall_route_degrades_to_local(seeded):
+    cfg = load_config(seeded)
+    cfg["peers"] = ["http://localhost"]
+    client = TestClient(create_app(cfg))
+    r = client.post("/v1/memory/federated_recall",
+                    json={"text": "auth token", "k": 5})
+    assert r.status_code == 200
+    out = r.json()
+    assert out["results"], "federated recall should return local hits"
+    assert out["sources"], "sources must be non-empty"
+    # TestClient is in-process only: the http://localhost peer is unreachable,
+    # so federated_recall gracefully degrades to local-only results.
+    assert out["sources"] == ["local"]
+    assert all(h.get("source_host") == "local" for h in out["results"])
+
+
 def test_single_key_wrong_token_401(seeded):
     from positronic_serve.config import load_config
     from positronic_serve.server import create_app

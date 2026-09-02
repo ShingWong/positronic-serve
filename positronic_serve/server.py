@@ -78,6 +78,13 @@ def create_app(cfg: dict):
     async def peers(request: Request):
         return JSONResponse({"peers": cfg.get("peers", [])})
 
+    async def federated_recall(request: Request):
+        if not _auth_ok(request, cfg):
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
+        b = await _body(request)
+        from positronic_serve.federation import federated_recall as _fed
+        return JSONResponse(_fed(cfg, b.get("text", ""), k=b.get("k", 8)))
+
     return Starlette(routes=[
         Route("/healthz", healthz, methods=["GET"]),
         Route("/v1/memory/recall", recall, methods=["POST"]),
@@ -86,4 +93,5 @@ def create_app(cfg: dict):
         Route("/v1/memory/prune", prune, methods=["POST"]),
         Route("/v1/memory/ingest", ingest, methods=["POST"]),
         Route("/v1/federation/peers", peers, methods=["GET"]),
+        Route("/v1/memory/federated_recall", federated_recall, methods=["POST"]),
     ])
