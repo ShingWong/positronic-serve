@@ -172,22 +172,15 @@ there is no federation loop.
 ## Install
 
 ```bash
-# 1. Install the package (dev path — see note below)
-pip install -e . --no-deps
+# 1. Install the package (pulls positronic-agent-interface automatically)
+pip install -e .
 
-# 2. Point PYTHONPATH at the PAI checkout
-export PYTHONPATH=/path/to/positronic-agent-interface
-
-# 3. Run — serve.json + .positronic live in the config dir
+# 2. Run — serve.json + .positronic live in the config dir
 positronic-serve --config-dir . --port 2114
 ```
 
-> **PAI dependency note:** `pyproject.toml` lists `positronic-ai` but the
-> installed metadata is `positronic-agent-interface`, so the dependency is
-> currently unresolvable by name. The supported dev path is
-> `pip install -e . --no-deps` plus `PYTHONPATH` pointing at your
-> `positronic-agent-interface` checkout. This will change once PAI ships
-> resolvable metadata.
+The `positronic-agent-interface` dependency resolves directly from the
+`feat/pai` branch of its repo — no `--no-deps`, no manual `PYTHONPATH`.
 
 The server reads `serve.json` from the config dir (defaults apply when absent):
 
