@@ -2,7 +2,7 @@
 
 ### Client/server polytemporal memory — share a brain, federate across hosts
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPLv3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Protocol: PEEP](https://img.shields.io/badge/Protocol-PEEP-orange)]()
 [![Port](https://img.shields.io/badge/Port-2114-green)]()
 [![Federation](https://img.shields.io/badge/Federation-RRF%20fusion-blueviolet)]()
@@ -270,7 +270,7 @@ ruff check positronic_serve/ tests/
 
 ## License
 
-GPL-3.0-or-later. Part of the positron project — see
+AGPL-3.0-or-later OR Commercial. Part of the positron project — see
 [positronic-research](https://github.com/ShingWong/positronic-research) for
 the PEEP paper and architecture, and
 [positronic-agent-interface](https://github.com/ShingWong/positronic-agent-interface)
