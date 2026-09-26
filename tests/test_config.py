@@ -47,3 +47,20 @@ def test_file_merges_and_keeps_defaults(tmp_path):
     assert cfg["peers"] == ["https://b.example.com"]
     assert cfg["host"] == "127.0.0.1"      # default preserved
     assert cfg["brain"] == "kairos"         # default preserved
+
+
+def test_trusted_proxies_default_empty(tmp_path):
+    assert load_config(tmp_path)["trusted_proxies"] == []
+
+
+def test_trusted_proxies_from_file(tmp_path):
+    (tmp_path / "serve.json").write_text(
+        json.dumps({"trusted_proxies": ["10.0.0.0/8"]}))
+    assert load_config(tmp_path)["trusted_proxies"] == ["10.0.0.0/8"]
+
+
+def test_bound_public_key_file_resolved_relative_to_config_dir(tmp_path):
+    (tmp_path / "serve.json").write_text(json.dumps(
+        {"auth": {"manager": "bound-single", "public_key_file": "master.pub"}}))
+    cfg = load_config(tmp_path)
+    assert cfg["auth"]["public_key_file"] == str(tmp_path / "master.pub")

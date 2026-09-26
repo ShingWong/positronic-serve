@@ -30,7 +30,12 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from positronic_serve.auth import build_key_manager
+from positronic_serve.audit import deny_bound_mismatch
+from positronic_serve.auth import (
+    build_key_manager,
+    host_matches_domain,
+    ip_in_subnet,
+)
 
 
 async def _body(request: Request) -> dict:
@@ -44,7 +49,50 @@ def _auth_ok(request: Request, cfg: dict) -> bool:
     mgr = build_key_manager(cfg.get("auth", {}))
     header = request.headers.get("authorization", "")
     token = header[7:] if header.startswith("Bearer ") else None
-    return mgr.validate(token)
+    if not mgr.validate(token):
+        return False
+    claims = mgr.inspect(token)
+    if claims is None:                    # local/single carry no claims
+        return True
+    origin = _origin(request, cfg)
+    if not ip_in_subnet(origin, claims.get("allowed_subnet", "")):
+        _deny_bound_mismatch(cfg, mgr, claims, origin, request)
+        return False
+    if not host_matches_domain(request.headers.get("host", ""),
+                                claims.get("allowed_domain", "")):
+        _deny_bound_mismatch(cfg, mgr, claims, origin, request)
+        return False
+    return True
+
+
+def _origin(request: Request, cfg: dict) -> str:
+    """Direct peer address, unless a trusted proxy forwarded the request."""
+    peer = (request.client.host if request.client else "") or ""
+    xff = request.headers.get("x-forwarded-for", "")
+    trusted = cfg.get("trusted_proxies") or []
+    if not xff or not _trusted(peer, trusted):
+        return peer
+    hops = [hop.strip() for hop in xff.split(",") if hop.strip()]
+    for hop in reversed(hops):
+        if not _trusted(hop, trusted):
+            return hop
+    return hops[0] if hops else peer
+
+
+def _trusted(ip: str, cidrs: list) -> bool:
+    return any(ip_in_subnet(ip, cidr) for cidr in cidrs)
+
+
+def _deny_bound_mismatch(cfg: dict, mgr, claims: dict, origin: str,
+                         request: Request) -> None:
+    deny_bound_mismatch(
+        cfg,
+        origin=origin,
+        claims=claims,
+        path=request.url.path,
+        key_id=(mgr.describe() or {}).get("key_id"),
+        forwarded_for=request.headers.get("x-forwarded-for") or None,
+    )
 
 
 def create_app(cfg: dict):

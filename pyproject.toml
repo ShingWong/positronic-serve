@@ -9,6 +9,7 @@ description = "PEEP network layer — brain-as-a-service + federated polytempora
 license = "AGPL-3.0-or-later OR Commercial"
 requires-python = ">=3.10"
 dependencies = [
+  "cryptography>=41",
   "starlette",
   "uvicorn",
   "positronic-agent-interface @ git+https://github.com/ShingWong/positronic-agent-interface.git@feat/pai",

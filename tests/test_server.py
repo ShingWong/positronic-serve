@@ -27,9 +27,13 @@ import sys
 
 sys.path.insert(0, "/usr/local/devel/positronic/positronic-agent-interface")
 
+import json
+from pathlib import Path
+
 import pytest
 from starlette.testclient import TestClient
 
+from positronic_serve.auth import mint_bound_token, public_key_b64
 from positronic_serve.config import load_config
 from positronic_serve.server import create_app
 
@@ -157,3 +161,113 @@ def test_single_key_no_token_401(seeded):
     client = TestClient(create_app(cfg))
     r = client.post("/v1/memory/recall", json={"text": "auth token"})
     assert r.status_code == 401
+
+
+def _bound_env(seeded, trusted=None):
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+        Ed25519PrivateKey,
+    )
+    priv = Ed25519PrivateKey.generate()
+    cfg = load_config(seeded)
+    cfg["auth"] = {"manager": "bound-single",
+                   "public_key": public_key_b64(priv)}
+    cfg["trusted_proxies"] = trusted or []
+    return priv, cfg
+
+
+def _client(cfg, ip="10.66.66.9"):
+    return TestClient(create_app(cfg), client=(ip, 40000))
+
+
+def _claims(subnet="10.66.66.0/24", domain="testserver"):
+    return {"allowed_subnet": subnet, "allowed_domain": domain}
+
+
+def _post(client, token, extra_headers=None):
+    headers = {"Authorization": f"Bearer {token}"}
+    headers.update(extra_headers or {})
+    return client.post("/v1/memory/recall",
+                       json={"text": "auth token expiry"},
+                       headers=headers)
+
+
+def _audit_records(seeded):
+    path = Path(seeded, "audit.log")
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text().splitlines()
+            if line.strip()]
+
+
+def test_bound_matching_identity_200(seeded):
+    priv, cfg = _bound_env(seeded)
+    token = mint_bound_token(priv, _claims())
+    assert _post(_client(cfg), token).status_code == 200
+
+
+def test_bound_rogue_subnet_401_writes_metadata_audit(seeded):
+    priv, cfg = _bound_env(seeded)
+    token = mint_bound_token(priv, _claims())
+    r = _post(_client(cfg, ip="192.168.5.7"), token)
+    assert r.status_code == 401
+    assert r.json() == {"error": "unauthorized"}
+    assert token not in r.text and "Traceback" not in r.text
+    recs = _audit_records(seeded)
+    assert len(recs) == 1
+    rec = recs[0]
+    assert rec["decision"] == "deny_bound_mismatch"
+    assert rec["scheme"] == "bound-single"
+    assert rec["origin"] == "192.168.5.7"
+    assert rec["allowed_subnet"] == "10.66.66.0/24"
+    assert rec["allowed_domain"] == "testserver"
+    assert rec["path"] == "/v1/memory/recall"
+    assert rec["key_id"] and rec["request_id"] and rec["ts"]
+    assert isinstance(rec["tau"], int)
+    text = Path(seeded, "audit.log").read_text()
+    assert token not in text and "PRIVATE" not in text
+
+
+def test_bound_rogue_domain_401(seeded):
+    priv, cfg = _bound_env(seeded)
+    token = mint_bound_token(priv, _claims(domain="evil.example"))
+    assert _post(_client(cfg), token).status_code == 401
+    assert _audit_records(seeded)[0]["allowed_domain"] == "evil.example"
+
+
+def test_bound_ignores_forwarding_header_from_untrusted_peer(seeded):
+    priv, cfg = _bound_env(seeded)          # trusted_proxies stays empty
+    token = mint_bound_token(priv, _claims())
+    r = _post(_client(cfg), token, {"X-Forwarded-For": "192.168.5.7"})
+    assert r.status_code == 200   # origin is still the direct peer
+
+
+def test_bound_honors_forwarding_header_from_trusted_peer(seeded):
+    priv, cfg = _bound_env(seeded, trusted=["10.66.66.0/24"])
+    client = _client(cfg)                    # peer 10.66.66.9 is trusted
+    outside = mint_bound_token(priv, _claims(subnet="10.66.66.0/24"))
+    r = _post(client, outside, {"X-Forwarded-For": "192.168.5.7"})
+    assert r.status_code == 401   # XFF consulted: origin moved off-peer
+    forwarded = mint_bound_token(priv, _claims(subnet="192.168.5.0/24"))
+    r = _post(client, forwarded, {"X-Forwarded-For": "192.168.5.7"})
+    assert r.status_code == 200
+
+
+def test_bound_xff_rightmost_untrusted_hop_is_origin(seeded):
+    priv, cfg = _bound_env(seeded, trusted=["10.66.66.0/24"])
+    token = mint_bound_token(priv, _claims(subnet="1.2.3.0/24"))
+    r = _post(_client(cfg), token,
+              {"X-Forwarded-For": "1.2.3.4, 10.66.66.9"})
+    assert r.status_code == 200
+    # origin is 1.2.3.4, not the trusted hop itself
+    hop_only = mint_bound_token(priv, _claims(subnet="10.66.66.9/32"))
+    r = _post(_client(cfg), hop_only,
+              {"X-Forwarded-For": "1.2.3.4, 10.66.66.9"})
+    assert r.status_code == 401
+
+
+def test_bound_all_trusted_hops_fall_back_to_leftmost(seeded):
+    priv, cfg = _bound_env(seeded, trusted=["10.66.66.0/24"])
+    token = mint_bound_token(priv, _claims(subnet="10.66.66.8/32"))
+    r = _post(_client(cfg), token,
+              {"X-Forwarded-For": "10.66.66.8, 10.66.66.9"})
+    assert r.status_code == 200   # every hop trusted: leftmost wins

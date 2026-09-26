@@ -145,6 +145,84 @@ else
   fail=1
 fi
 
+echo "== auth: bound-single (zero-trust identity) =="
+kill "$SRV_PID" 2>/dev/null; sleep 1
+python3 - "$TMP" "$PORT" <<'EOF'
+import json, sys
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from positronic_serve.auth import mint_bound_token, public_key_b64
+d, port = sys.argv[1], sys.argv[2]
+priv = Ed25519PrivateKey.generate()
+open(f"{d}/serve.json", "w").write(json.dumps({
+    "host": "127.0.0.1", "port": int(port),
+    "auth": {"manager": "bound-single", "public_key": public_key_b64(priv)},
+    "trusted_proxies": [],
+    "peers": []}))
+tokens = {
+    "a": {"allowed_subnet": "10.66.66.0/24", "allowed_domain": "rogue.invalid"},
+    "b": {"allowed_subnet": "127.0.0.0/8", "allowed_domain": "localhost"},
+    "c": {"allowed_subnet": "127.0.0.0/8", "allowed_domain": "evil.example"},
+}
+for name, claims in tokens.items():
+    open(f"{d}/token.{name}", "w").write(mint_bound_token(priv, claims))
+print("bound-single configured, tokens a/b/c minted")
+EOF
+python3 -m positronic_serve --config-dir "$TMP" --host 127.0.0.1 --port "$PORT" &
+SRV_PID=$!
+sleep 2
+TOK_A=$(cat "$TMP/token.a")
+TOK_B=$(cat "$TMP/token.b")
+TOK_C=$(cat "$TMP/token.c")
+
+check "test 5: rogue subnet 401" 401 -X POST http://127.0.0.1:$PORT/v1/memory/recall \
+  -H 'Content-Type: application/json' -H 'Host: localhost' \
+  -H "Authorization: Bearer $TOK_A" -d '{"text":"auth"}'
+BODY_A=$(curl -s -X POST http://127.0.0.1:$PORT/v1/memory/recall \
+  -H 'Content-Type: application/json' -H 'Host: localhost' \
+  -H "Authorization: Bearer $TOK_A" -d '{"text":"auth"}')
+if AUDIT_OUT=$(python3 - "$TMP" "$TOK_A" <<'EOF'
+import json, sys, pathlib
+d, token = sys.argv[1], sys.argv[2]
+log = pathlib.Path(d, "audit.log")
+assert log.exists(), "audit.log missing"
+text = log.read_text()
+recs = [json.loads(l) for l in text.splitlines() if l.strip()]
+deny = [r for r in recs if r.get("decision") == "deny_bound_mismatch"]
+assert deny, "no deny_bound_mismatch record"
+r = deny[0]
+assert r.get("scheme") == "bound-single", r
+assert r.get("origin") in ("127.0.0.1", "::1"), f"origin {r.get('origin')!r}"
+assert r.get("allowed_subnet") == "10.66.66.0/24", r
+assert r.get("allowed_domain") == "rogue.invalid", r
+assert r.get("path") == "/v1/memory/recall", r
+assert r.get("key_id") and r.get("request_id") and r.get("ts"), r
+assert isinstance(r.get("tau"), int), r
+assert token not in text, "raw token leaked into audit.log"
+print("  [PASS] audit: deny_bound_mismatch recorded, origin+claims echoed, no token material")
+EOF
+); then echo "$AUDIT_OUT"; else
+  echo "  [FAIL] audit record assertions"
+  fail=1
+fi
+if LEAK_OUT=$(python3 - "$TOK_A" "$BODY_A" <<'EOF'
+import json, sys
+token, body = sys.argv[1], sys.argv[2]
+assert json.loads(body) == {"error": "unauthorized"}, body
+for needle in ("Traceback", "Secret", "PRIVATE", "ed25519", token):
+    assert needle not in body, f"body leaks {needle!r}"
+print("  [PASS] 401 body: generic JSON only — no stack, no key material, no token")
+EOF
+); then echo "$LEAK_OUT"; else
+  echo "  [FAIL] 401 body leak assertions"
+  fail=1
+fi
+check "test 5: matching identity 200 (positive control)" 200 -X POST http://127.0.0.1:$PORT/v1/memory/recall \
+  -H 'Content-Type: application/json' -H 'Host: localhost' \
+  -H "Authorization: Bearer $TOK_B" -d '{"text":"auth"}'
+check "test 5: domain mismatch 401" 401 -X POST http://127.0.0.1:$PORT/v1/memory/recall \
+  -H 'Content-Type: application/json' -H 'Host: localhost' \
+  -H "Authorization: Bearer $TOK_C" -d '{"text":"auth"}'
+
 echo ""
 if [ "$fail" = "1" ]; then
   echo "== PROTOCOL GATE: FAIL =="
