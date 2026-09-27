@@ -270,7 +270,7 @@ ruff check positronic_serve/ tests/
 
 ## License
 
-AGPL-3.0-or-later OR Commercial. Part of the positron project — see
+AGPL-3.0-or-later OR LicenseRef-Commercial. Part of the positron project — see
 [positronic-research](https://github.com/ShingWong/positronic-research) for
 the PEEP paper and architecture, and
 [positronic-agent-interface](https://github.com/ShingWong/positronic-agent-interface)
