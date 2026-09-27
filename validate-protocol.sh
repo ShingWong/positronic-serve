@@ -223,6 +223,78 @@ check "test 5: domain mismatch 401" 401 -X POST http://127.0.0.1:$PORT/v1/memory
   -H 'Content-Type: application/json' -H 'Host: localhost' \
   -H "Authorization: Bearer $TOK_C" -d '{"text":"auth"}'
 
+echo "== auth: bounded uniform rejection (PEEP-0002 3.4 / 4.5) =="
+# These tokens are UNSIGNED, so they exercise the pre-signature parse path that
+# test 5 never reaches. Each must be denied with the same generic 401 as any
+# other invalid token -- never a 5xx. A server that answers differently for an
+# unparseable token has turned its parser into an oracle.
+python3 - "$TMP" <<'EOF'
+import base64, json, pathlib, sys
+d = pathlib.Path(sys.argv[1])
+
+def b64u(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+hdr = b64u(json.dumps({"alg": "EdDSA", "kid": "0" * 16}).encode())
+sig = b64u(b"\x00" * 64)
+
+# 1. deeply nested JSON: json.loads raises RecursionError, which is a
+#    RuntimeError, not a ValueError -- it must not escape the token parser
+deep = 10000
+cases = {
+    # nesting deep enough to blow a recursive parser's stack
+    "nested": f"{hdr}.{b64u(('[' * deep + ']' * deep).encode())}.{sig}",
+    # segment longer than the 4096-character bound
+    "oversize": f"{b64u(b'x' * 20000)}.{b64u(b'x' * 20000)}.{sig}",
+    # under the length bound, but undecodable / unparseable
+    "badb64": f"{hdr}.!!!!.{sig}",
+    "notjson": f"{hdr}.{b64u(b'this is not json')}.{sig}",
+    "deepish": f"{hdr}.{b64u(('[' * 1400 + ']' * 1400).encode())}.{sig}",
+}
+for name, tok in cases.items():
+    (d / f"hostile.{name}").write_text(tok)
+print(f"  minted {len(cases)} unsigned hostile tokens (largest {max(len(t) for t in cases.values())} chars)")
+EOF
+
+for CASE in nested oversize badb64 notjson deepish; do
+  TOK_X=$(cat "$TMP/hostile.$CASE")
+  check "test 6: $CASE token 401 (not 5xx)" 401 \
+    -X POST http://127.0.0.1:$PORT/v1/memory/recall \
+    -H 'Content-Type: application/json' -H 'Host: localhost' \
+    -H "Authorization: Bearer $TOK_X" -d '{"text":"auth"}'
+  # same generic body as every other invalid token, and no 5xx anywhere
+  CODE=$(curl -s -o "$TMP/hostile.$CASE.body" -w "%{http_code}" \
+    -X POST http://127.0.0.1:$PORT/v1/memory/recall \
+    -H 'Content-Type: application/json' -H 'Host: localhost' \
+    -H "Authorization: Bearer $TOK_X" -d '{"text":"auth"}')
+  if [ "$CODE" -ge 500 ] 2>/dev/null; then
+    echo "  [FAIL] test 6: $CASE token produced a server error ($CODE)"
+    fail=1
+  fi
+done
+
+if HOSTILE_OUT=$(python3 - "$TMP" <<'EOF'
+import json, pathlib, sys
+d = pathlib.Path(sys.argv[1])
+generic = {"error": "unauthorized"}
+for name in ("nested", "oversize", "badb64", "notjson", "deepish"):
+    raw = (d / f"hostile.{name}.body").read_text()
+    assert json.loads(raw) == generic, f"{name}: body is not the generic denial: {raw[:120]!r}"
+    for needle in ("Traceback", "RecursionError", "Error", "token"):
+        assert needle not in raw, f"{name}: body leaks {needle!r}"
+print("  [PASS] test 6: every hostile token got the identical generic 401 body")
+EOF
+); then echo "$HOSTILE_OUT"; else
+  echo "  [FAIL] test 6: hostile token body assertions"
+  fail=1
+fi
+
+# positive control: the bounds must not break a legitimate token
+check "test 6: valid token still 200 (positive control)" 200 \
+  -X POST http://127.0.0.1:$PORT/v1/memory/recall \
+  -H 'Content-Type: application/json' -H 'Host: localhost' \
+  -H "Authorization: Bearer $TOK_B" -d '{"text":"auth"}'
+
 echo ""
 if [ "$fail" = "1" ]; then
   echo "== PROTOCOL GATE: FAIL =="
