@@ -117,6 +117,10 @@ def host_matches_domain(host: str, domain: str) -> bool:
     return bool(value) and value == (domain or "").strip().lower()
 
 
+# bound-single segments are two tiny JSON objects; 4 KiB is generous.
+_MAX_SEGMENT_B64 = 4096
+
+
 class BoundKeyManager:
     """bound-single: Ed25519-signed bearer token bound to a network identity.
 
@@ -148,11 +152,20 @@ class BoundKeyManager:
         if not token or token.count(".") != 2:
             return None
         header_b64, claims_b64, sig_b64 = token.split(".")
+        # A bound-single token carries two small JSON objects, so a segment
+        # this large is malformed by definition. Rejecting it before the parse
+        # keeps hostile input away from the JSON parser: without the cap, a
+        # deeply nested claims blob raises RecursionError, which is a
+        # RuntimeError rather than a ValueError, escapes this function and
+        # turns an invalid token into a 500 instead of the generic 401
+        # (PEEP-0002 4.5 uniform denial).
+        if len(header_b64) > _MAX_SEGMENT_B64 or len(claims_b64) > _MAX_SEGMENT_B64:
+            return None
         try:
             header = json.loads(_b64url_decode(header_b64))
             claims = json.loads(_b64url_decode(claims_b64))
             signature = _b64url_decode(sig_b64)
-        except ValueError:
+        except (ValueError, RecursionError, MemoryError):
             return None
         if not isinstance(header, dict) or not isinstance(claims, dict):
             return None

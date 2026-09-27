@@ -177,6 +177,43 @@ def test_bound_rejects_bad_claims():
         assert mgr.validate(token) is False
 
 
+def test_bound_rejects_deeply_nested_claims_without_raising():
+    """A claims segment nested past the JSON recursion limit is an invalid
+    token, not a server error. json.loads raises RecursionError (a
+    RuntimeError), which must not escape inspect() (PEEP-0002 4.5)."""
+    import base64 as b64
+    import json as js
+
+    mgr = _bound_manager(_ed25519())
+    header_b64 = b64.urlsafe_b64encode(
+        js.dumps({"alg": "EdDSA", "kid": "0" * 16}).encode()
+    ).rstrip(b"=").decode()
+    for depth in (9999, 20000):
+        nested = ("[" * depth + "]" * depth).encode()
+        claims_b64 = b64.urlsafe_b64encode(nested).rstrip(b"=").decode()
+        sig_b64 = b64.urlsafe_b64encode(b"\x00" * 64).rstrip(b"=").decode()
+        token = f"{header_b64}.{claims_b64}.{sig_b64}"
+        assert mgr.validate(token) is False, depth
+        assert mgr.inspect(token) is None, depth
+
+
+def test_bound_rejects_oversized_segments():
+    """The pre-parse cap keeps hostile input away from the JSON parser: a
+    segment past the cap is malformed by definition, so it is rejected
+    without decoding or parsing it at all."""
+    mgr = _bound_manager(_ed25519())
+    import base64 as b64
+    import json as js
+
+    header_b64 = b64.urlsafe_b64encode(
+        js.dumps({"alg": "EdDSA", "kid": "0" * 16}).encode()
+    ).rstrip(b"=").decode()
+    big = b64.urlsafe_b64encode(b"x" * 20000).rstrip(b"=").decode()
+    sig_b64 = b64.urlsafe_b64encode(b"\x00" * 64).rstrip(b"=").decode()
+    for token in (f"{big}.{big}.{sig_b64}", f"{header_b64}.{big}.{sig_b64}"):
+        assert mgr.validate(token) is False
+
+
 def test_bound_requires_exactly_one_public_key_source():
     with pytest.raises(ValueError):
         build_key_manager({"manager": "bound-single"})
