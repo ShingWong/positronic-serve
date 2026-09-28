@@ -12,8 +12,15 @@ dependencies = [
   "cryptography>=41",
   "starlette",
   "uvicorn",
-  "positronic-agent-interface @ git+https://github.com/ShingWong/positronic-agent-interface.git@feat/pai",
+  "positronic-agent-interface @ git+https://github.com/ShingWong/positronic-agent-interface.git@main",
 ]
+
+[project.optional-dependencies]
+# starlette is deliberately unpinned, so the HTTP client its test client needs
+# moves with it: starlette >= 1.7 needs httpx2 (not httpx) for
+# starlette.testclient. Without this the suite cannot even be collected on a
+# clean install, while local runs keep passing on an older starlette.
+test = ["pytest>=8", "ruff", "httpx2"]
 
 [project.scripts]
 positronic-serve = "positronic_serve.cli:main"
