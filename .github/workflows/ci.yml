@@ -1,0 +1,18 @@
+name: ci
+on: { push: { branches: [main] }, pull_request: {} }
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      # Installs positronic-agent-interface (and transitively memeng) from git.
+      # The `test` extra carries ruff, pytest and httpx2, which starlette >= 1.7
+      # needs for starlette.testclient.
+      - run: pip install -e ".[test]"
+      - run: ruff check positronic_serve tests
+      - run: python -m pytest -q
+      # Live conformance gate: boots the server on :21140 and checks every
+      # endpoint against the PEEP payloads, auth and federation.
+      - run: bash validate-protocol.sh
