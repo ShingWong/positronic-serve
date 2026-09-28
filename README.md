@@ -2,7 +2,7 @@
 
 ### Client/server polytemporal memory — share a brain, federate across hosts
 
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPLv3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+[![License: AGPL-3.0-or-later OR LicenseRef-Commercial](https://img.shields.io/badge/License-AGPL--3.0--or--later%20OR%20LicenseRef--Commercial-blue.svg)](LICENSE)
 [![Protocol: PEEP](https://img.shields.io/badge/Protocol-PEEP-orange)]()
 [![Port](https://img.shields.io/badge/Port-2114-green)]()
 [![Federation](https://img.shields.io/badge/Federation-RRF%20fusion-blueviolet)]()
@@ -180,7 +180,7 @@ positronic-serve --config-dir . --port 2114
 ```
 
 The `positronic-agent-interface` dependency resolves directly from the
-`feat/pai` branch of its repo — no `--no-deps`, no manual `PYTHONPATH`.
+`main` branch of its repo — no `--no-deps`, no manual `PYTHONPATH`.
 
 The server reads `serve.json` from the config dir (defaults apply when absent):
 
