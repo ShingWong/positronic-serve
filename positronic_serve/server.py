@@ -96,8 +96,11 @@ def _deny_bound_mismatch(cfg: dict, mgr, claims: dict, origin: str,
 
 
 def create_app(cfg: dict):
-    import sys
-    sys.path.insert(0, "/usr/local/devel/positronic/positronic-agent-interface")
+    # positronic_ai is a declared dependency (see pyproject.toml), so it is
+    # already importable. There used to be a sys.path.insert(0, <checkout>)
+    # here, which was redundant *and* harmful: at position 0 it shadowed the
+    # installed package with whatever the working tree happened to hold, so a
+    # stale or uncommitted tree silently won over a correct install.
     from positronic_ai.ops import ask as _ask
     from positronic_ai.ops import consolidate as _cons
     from positronic_ai.ops import ingest as _ing

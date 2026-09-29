@@ -25,7 +25,6 @@
 # positronic_serve/federation.py
 import json
 import logging
-import sys
 import urllib.request
 
 log = logging.getLogger(__name__)
@@ -79,7 +78,8 @@ def _call_peer(peer: str, text: str, *, timeout: float, key: str | None) -> list
 def federated_recall(cfg: dict, text: str, k: int = 8, *,
                      timeout: float = 3.0) -> dict:
     """Local recall + one-hop peer fan-out. A bad peer is skipped, never fatal."""
-    sys.path.insert(0, "/usr/local/devel/positronic/positronic-agent-interface")
+    # positronic_ai is a declared dependency; see the note in server.py about
+    # why the old sys.path shim was removed.
     from positronic_ai.ops.recall import run as local_recall
 
     lists = []

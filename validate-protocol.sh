@@ -10,7 +10,11 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 TMP="$(mktemp -d)"
 TMP2=""
 PORT=21140
-export PYTHONPATH="/usr/local/devel/positronic/positronic-agent-interface:$ROOT"
+# positronic_ai is a declared dependency, so it needs no path entry here. Only
+# this checkout goes on PYTHONPATH, so `python3 -m positronic_serve` runs the
+# tree under test. The old absolute entry was redundant and, because it was
+# prepended, it made the sibling checkout shadow the declared install.
+export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
 
 cleanup() { kill "${SRV_PID:-}" "${SRV_PID2:-}" 2>/dev/null || true; rm -rf "$TMP" "$TMP2"; }
 trap cleanup EXIT
@@ -18,7 +22,6 @@ trap cleanup EXIT
 echo "== seeding brain =="
 python3 - "$TMP" <<'EOF'
 import sys
-sys.path.insert(0, "/usr/local/devel/positronic/positronic-agent-interface")
 from positronic_ai.brains import init_brain
 from positronic_ai.ops.ingest import run as ingest
 from positronic_ai.ops.consolidate import run as consolidate
@@ -84,7 +87,6 @@ echo "== auth: single key track =="
 kill "$SRV_PID" 2>/dev/null; sleep 1
 python3 - "$TMP" "$PORT" <<'EOF'
 import json, sys, os
-sys.path.insert(0, "/usr/local/devel/positronic/positronic-agent-interface")
 d, port = sys.argv[1], sys.argv[2]
 open(f"{d}/serve.json","w").write(json.dumps({
   "host":"127.0.0.1","port":int(port),
@@ -105,7 +107,6 @@ echo "== federation: two live servers =="
 TMP2="$(mktemp -d)"
 python3 - "$TMP2" <<'EOF'
 import sys
-sys.path.insert(0, "/usr/local/devel/positronic/positronic-agent-interface")
 from positronic_ai.brains import init_brain
 from positronic_ai.ops.ingest import run as ingest
 d = sys.argv[1]

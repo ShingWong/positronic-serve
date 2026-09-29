@@ -23,10 +23,8 @@
 # =====================================================================
 
 # tests/test_server.py
-import sys
-
-sys.path.insert(0, "/usr/local/devel/positronic/positronic-agent-interface")
-
+# positronic_ai is a declared dependency; the old sys.path shim made the suite
+# test the sibling checkout rather than the declared package.
 import json
 from pathlib import Path
 
